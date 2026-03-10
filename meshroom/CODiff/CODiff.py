@@ -35,15 +35,6 @@ class CODiff(desc.Node):
             description="Input images to process in a sfmData filepath",
             value="",
         ),
-        desc.ChoiceParam(
-            name="inputExtension",
-            label="Input Extension",
-            description="Extension of the input images. This will be used to determine which images are to be used if \n"
-                        "a directory is provided as the input.",
-            values=["jpg", "jpeg", "png", "exr"],
-            value="jpg",
-            exclusive=True,
-        ),
         desc.IntParam(
             name="vaeEncoderTileSize",
             label="VAE Encoder Tile Size",
@@ -109,10 +100,9 @@ class CODiff(desc.Node):
     ]
 
     def preprocess(self, node):
-        extension = node.inputExtension.value
         input_path = node.inputImages.value
 
-        image_paths = get_image_paths_list(input_path, extension)
+        image_paths = get_image_paths_list(input_path)
 
         if len(image_paths) == 0:
             raise FileNotFoundError(f'No image files found in {input_path}')
@@ -129,7 +119,6 @@ class CODiff(desc.Node):
 
         import torch
         import torch.nn.functional as F
-        #from torch.utils import data
         from torchvision import transforms
         from img_proc import image
         import os
@@ -190,10 +179,6 @@ class CODiff(desc.Node):
             # merge lora
             parser_codiff.add_argument("--merge_and_unload_lora", default=False)  # merge lora weights before inference
             # tile setting
-            # parser_codiff.add_argument("--vae_decoder_tiled_size", type=int, default=224)
-            # parser_codiff.add_argument("--vae_encoder_tiled_size", type=int, default=1024)
-            # parser_codiff.add_argument("--latent_tiled_size", type=int, default=96)
-            # parser_codiff.add_argument("--latent_tiled_overlap", type=int, default=32)
             parser_codiff.add_argument("--vae_decoder_tiled_size", type=int, default=chunk.node.vaeDecoderTileSize.value)
             parser_codiff.add_argument("--vae_encoder_tiled_size", type=int, default=chunk.node.vaeEncoderTileSize.value)
             parser_codiff.add_argument("--latent_tiled_size", type=int, default=chunk.node.latentTileSize.value)
@@ -212,14 +197,6 @@ class CODiff(desc.Node):
             for k, v in cave.named_parameters():
                 v.requires_grad = False
             cave = cave.to("cuda")
-
-            # # weight type
-            # weight_dtype = torch.float32
-            # if args_codiff.mixed_precision == "fp16":
-            #     weight_dtype = torch.float16
-
-
-            # device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
             # computation
             chunk.logger.info(f'Starting computation on chunk {chunk.range.iteration + 1}/{chunk.range.fullSize // chunk.range.blockSize + int(chunk.range.fullSize != chunk.range.blockSize)}...')
@@ -244,24 +221,10 @@ class CODiff(desc.Node):
                     lq_raw = torch.from_numpy(image1).permute(2, 0, 1).float().unsqueeze(0).to("cuda")     # 0, 1
                     lq = lq_raw * 2 - 1     # -1, 1
 
-                    # lq_raw_padded, pad = pad_image(lq_raw, 8)
-                    # lq_raw_padded = lq_raw_padded.to("cuda")     # 0, 1
-                    # lq = lq_raw_padded * 2 - 1     # -1, 1
-
                     visual_embedding = cave.get_visual_embedding(lq_raw)
                     img_E = model(lq, visual_embedding)
-
-                    # img_E_padded = model(lq, visual_embedding)
-                    # img_E = unpad_image(img_E_padded, pad)
-
                     img_E = transforms.ToPILImage()(img_E[0].cpu() * 0.5 + 0.5)
-                    #if args.align_method == 'adain':
                     img_E = adain_color_fix(target=img_E, source=image1)
-                    #elif args.align_method == 'wavelet':
-                    #    img_E = wavelet_color_fix(target=img_E, source=img_L)
-                    #else:
-                    #    pass
-
                     img_E = np.array(img_E) / 255.0
 
                     outputDirPath = Path(chunk.node.output.value)
@@ -275,12 +238,11 @@ class CODiff(desc.Node):
         finally:
             chunk.logManager.end()
 
-def get_image_paths_list(input_path, extension):
+def get_image_paths_list(input_path):
     from pyalicevision import sfmData
     from pyalicevision import sfmDataIO
     from pathlib import Path
 
-    include_suffixes = [extension.lower(), extension.upper()]
     image_paths = []
 
     if Path(input_path).suffix.lower() in [".sfm", ".abc"]:
