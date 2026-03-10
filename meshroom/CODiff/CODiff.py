@@ -126,38 +126,6 @@ class CODiff(desc.Node):
         from pathlib import Path
         import argparse
 
-        def pad_image(image: torch.Tensor, align: int) -> Tuple[torch.Tensor, Tuple[int, int]]:
-            if not torch.is_tensor(image):
-                raise ValueError(f"Invalid input type={type(image)}.")
-            if not torch.is_floating_point(image):
-                raise ValueError(f"Invalid input dtype={image.dtype}.")
-            if image.dim() != 4:
-                raise ValueError(f"Invalid input dimensions; shape={image.shape}.")
-
-            h, w = image.shape[-2:]
-            ph, pw = -h % align, -w % align
-
-            image = F.pad(image, (0, pw, 0, ph), mode="replicate")
-
-            return image, (ph, pw)
-
-        def unpad_image(image: torch.Tensor, padding: Tuple[int, int]) -> torch.Tensor:
-            if not torch.is_tensor(image):
-                raise ValueError(f"Invalid input type={type(image)}.")
-            if not torch.is_floating_point(image):
-                raise ValueError(f"Invalid input dtype={image.dtype}.")
-            if image.dim() != 4:
-                raise ValueError(f"Invalid input dimensions; shape={image.shape}.")
-
-            ph, pw = padding
-            uh = None if ph == 0 else -ph
-            uw = None if pw == 0 else -pw
-
-            image = image[:, :, :uh, :uw]
-
-            return image
-
-
         try:
             chunk.logManager.start(chunk.node.verboseLevel.value)
             if not chunk.node.inputImages.value:
